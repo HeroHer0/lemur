@@ -230,8 +230,8 @@ class PCManager:
         self.change_password_button = tk.Button(self.root, text="Cambiar Contraseña", command=self.change_password)
         self.change_password_button.grid(row=7, column=0, columnspan=8, pady=10)
 
-    def select_pc(self, pc_name):
-        self.pcerda = pc_name  # Guardar el nombre de la PC seleccionada
+    def select_pc(self, pc_index):
+        self.pcerda = f"LC{pc_index + 1:02}"  # Guardar el nombre de la PC seleccionada
         self.task_window = tk.Toplevel(self.root)
         self.task_window.title(f"PC {self.pcerda} Tasks")
         self.task_window.bind('<Escape>', lambda e: self.task_window.destroy())
@@ -251,7 +251,12 @@ class PCManager:
             task_function(self.pcerda)  # Ejecutar la función de tarea con el nombre de la PC
         self.task_window.destroy()
 
-     def _update_status_thread(self):
+    def update_status(self):
+        """Inicia la actualización del estado de las PCs usando hilos."""
+        thread = threading.Thread(target=self._update_status_thread)
+        thread.start()
+
+    def _update_status_thread(self):
         """Actualiza el estado de cada PC en paralelo utilizando hilos."""
         local_pc_name = socket.gethostname().upper()  # Obtener el nombre de la PC local y convertir a mayúsculas
         
