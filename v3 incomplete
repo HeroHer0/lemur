@@ -7,7 +7,7 @@ import socket
 import threading
 import concurrent.futures
 from wakeonlan import send_magic_packet  # Importar la función send_magic_packet
-
+//vvv
 # Mapeo de nombres de PCs a direcciones MAC
 pc_mac_mapping = {
     "LC01": "B0-22-7A-2D-88-DA",
