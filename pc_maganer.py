@@ -5,6 +5,7 @@ import shutil
 import os
 import socket
 import threading
+import concurrent.futures
 from wakeonlan import send_magic_packet  # Importar la función send_magic_packet
 
 # Mapeo de nombres de PCs a direcciones MAC
@@ -32,6 +33,25 @@ pc_mac_mapping = {
     "LC38": "0A-00-27-00-00-17"
     
 }
+# Función para realizar ping a una PC
+def ping_pc(pc_name):
+    try:
+        comando = f'ping -n 1 {pc_name}'  # Envía un solo paquete de ping
+        print(f"Ejecutando comando: {comando}")  # Depuración
+        resultado = subprocess.run(comando, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+        
+        # Analizar la salida del comando ping
+        salida = resultado.stdout.lower()  # Convertir la salida a minúsculas para facilitar la comparación
+        
+        if "tiempo de espera agotado" in salida or "host de destino inaccesible" in salida:
+            return False
+        elif "bytes=" in salida:  # Si hay una respuesta exitosa
+            return True
+        else:
+            return None
+    except subprocess.CalledProcessError as e:
+        messagebox.showerror("Error", f"Ocurrió un error al ejecutar el comando: {e}")
+        return None
 
 # Función para leer la contraseña desde un archivo
 def read_password():
@@ -193,20 +213,25 @@ class PCManager:
 
     def create_widgets(self):
         self.pc_buttons = []
-        for i in range (40):  # Corrección aquí
-            pc_name = f"LC{i+1:02}"
-            pc_button = tk.Button(self.root, text=pc_name, command=lambda pc_name=pc_name: self.select_pc(pc_name))
+        for i in range(40):
+            if (i < 9):
+                pc_button = tk.Button(self.root, text=f"LC0{i+1}", command=lambda i=i: self.select_pc(i))
+            else:
+                pc_button = tk.Button(self.root, text=f"LC{i+1}", command=lambda i=i: self.select_pc(i))
             pc_button.grid(row=i//8, column=i%8, padx=5, pady=5)
             self.pc_buttons.append(pc_button)
 
         self.update_button = tk.Button(self.root, text="Actualizar", command=self.update_status)
-        self.update_button.grid(row=6, column=0, columnspan=8, pady=10)
+        self.update_button.grid(row=6, column=0, columnspan=4, pady=10)
+
+        self.shut_all_button = tk.Button(self.root, text="Apagar Todas", command=self.shut_down_all)
+        self.shut_all_button.grid(row=6, column=4, columnspan=4, pady=10)
 
         self.change_password_button = tk.Button(self.root, text="Cambiar Contraseña", command=self.change_password)
         self.change_password_button.grid(row=7, column=0, columnspan=8, pady=10)
 
-    def select_pc(self, pc_name):
-        self.pcerda = pc_name  # Guardar el nombre de la PC seleccionada
+    def select_pc(self, pc_index):
+        self.pcerda = f"LC{pc_index + 1:02}"  # Guardar el nombre de la PC seleccionada
         self.task_window = tk.Toplevel(self.root)
         self.task_window.title(f"PC {self.pcerda} Tasks")
         self.task_window.bind('<Escape>', lambda e: self.task_window.destroy())
@@ -227,27 +252,49 @@ class PCManager:
         self.task_window.destroy()
 
     def update_status(self):
+        """Inicia la actualización del estado de las PCs usando hilos."""
         thread = threading.Thread(target=self._update_status_thread)
         thread.start()
 
     def _update_status_thread(self):
+        """Actualiza el estado de cada PC en paralelo utilizando hilos."""
         local_pc_name = socket.gethostname().upper()  # Obtener el nombre de la PC local y convertir a mayúsculas
-        button_colors = []
-        for i, button in enumerate(self.pc_buttons):
-            pc_name = f"LC{str(i + 1).zfill(2)}"
-            if pc_name == local_pc_name:  # Asegurarse de identificar correctamente la PC local
-                button_colors.append( ('green', button) )
-            elif ping_pc(pc_name):
-                button_colors.append( ('green', button) )
-            else:
-                button_colors.append( ('red', button) )
         
-        # Actualizar los colores de todos los botones en un solo paso
+        # Crear un diccionario de colores para actualizar los botones
+        button_colors = {}
+
+        def check_pc_status(pc_name):
+            """Verifica el estado de una PC (ping) y retorna el color correspondiente."""
+            if pc_name == local_pc_name:
+                return 'green'  # La PC local siempre está activa
+            elif ping_pc(pc_name):
+                return 'green'
+            else:
+                return 'red'
+
+        # Usar ThreadPoolExecutor para realizar las verificaciones en paralelo
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            pc_names = [f"LC{str(i + 1).zfill(2)}" for i in range(len(self.pc_buttons))]
+            results = executor.map(check_pc_status, pc_names)
+
+        # Actualizar los colores de los botones basado en los resultados
+        for button, color in zip(self.pc_buttons, results):
+            button_colors[button] = color
+
+        # Actualizar los botones en el hilo principal
         def update_all_buttons():
-            for color, button in button_colors:
+            for button, color in button_colors.items():
                 button.config(bg=color)
         
         self.root.after(0, update_all_buttons)
+
+    def shut_down_all(self):
+        """Apaga todas las PCs que están marcadas en verde."""
+        for i, button in enumerate(self.pc_buttons):
+            if button.cget("bg") == "green":  # Verificar si el botón está verde
+                pc_name = f"LC{str(i + 1).zfill(2)}"
+                Apagar(pc_name)  # Apagar la PC correspondiente
+        messagebox.showinfo("Información", "Se enviaron las solicitudes para apagar las PCs activas.")
 
     def change_password(self):
         self.change_password_window = tk.Toplevel(self.root)
@@ -298,4 +345,4 @@ class Login:
 if __name__ == "__main__":
     root = tk.Tk()
     app = Login(root)
-    root.mainloop()  
+    root.mainloop()
